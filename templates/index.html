@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Generador RQ Benita</title>
+    <title>Procesador de Requerimientos</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <style>
@@ -29,7 +29,7 @@
         .upload-area {
             border: 2px dashed rgba(255, 255, 255, 0.3);
             border-radius: 12px;
-            padding: 30px;
+            padding: 25px;
             text-align: center;
             cursor: pointer;
             transition: all 0.3s ease;
@@ -37,6 +37,23 @@
         .upload-area:hover {
             border-color: #0d6efd;
             background: rgba(13, 110, 253, 0.05);
+        }
+        .form-select-custom {
+            background-color: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: #fff;
+            border-radius: 10px;
+            padding: 10px 15px;
+        }
+        .form-select-custom:focus {
+            background-color: #2a2a40;
+            color: #fff;
+            border-color: #0d6efd;
+            box-shadow: none;
+        }
+        .form-select-custom option {
+            background-color: #2a2a40;
+            color: #fff;
         }
         .btn-custom {
             background: linear-gradient(45deg, #0d6efd, #00d4ff);
@@ -55,10 +72,24 @@
 <body>
 
 <div class="card-custom text-center">
-    <h2 class="mb-3"><i class="fa-solid fa-file-excel text-success me-2"></i>Procesador RQ Benita</h2>
-    <p class="text-secondary mb-4">Sube tus reportes de Odoo para consolidar y aplicar el formato automáticamente.</p>
+    <h2 class="mb-3"><i class="fa-solid fa-store text-info me-2"></i>Procesador de RQ</h2>
+    <p class="text-secondary mb-4">Selecciona el local objetivo y sube tus archivos de Odoo.</p>
 
     <form action="/procesar" method="POST" enctype="multipart/form-data">
+        
+        <!-- Filtro Selector de Local -->
+        <div class="text-start mb-3">
+            <label for="local" class="form-label text-light small font-weight-bold">
+                <i class="fa-solid fa-location-dot me-1 text-primary"></i> Seleccionar Local:
+            </label>
+            <select class="form-select form-select-custom w-100" id="local" name="local" required>
+                <option value="La Benita" selected>La Benita</option>
+                <option value="La Guardiana">La Guardiana</option>
+                <option value="Centro de Producción">Centro de Producción</option>
+            </select>
+        </div>
+
+        <!-- Zona de Carga de Archivos -->
         <div class="upload-area mb-3" id="drop-zone" onclick="document.getElementById('fileInput').click()">
             <i class="fa-solid fa-cloud-arrow-up fa-3x text-primary mb-2"></i>
             <h5>Haz clic o arrastra tus archivos aquí</h5>
@@ -68,17 +99,18 @@
 
         <div id="file-list" class="text-start mb-3 text-info small"></div>
 
+        <!-- Opciones de Formato -->
         <div class="row g-2 mb-4">
             <div class="col-6">
                 <input type="radio" class="btn-check" name="formato" id="fmtExcel" value="excel" checked>
                 <label class="btn btn-outline-light w-100 py-2" for="fmtExcel">
-                    <i class="fa-regular fa-file-excel me-1"></i> Excel (.xlsx)
+                    <i class="fa-regular fa-file-excel me-1 text-success"></i> Excel (.xlsx)
                 </label>
             </div>
             <div class="col-6">
                 <input type="radio" class="btn-check" name="formato" id="fmtPdf" value="pdf">
                 <label class="btn btn-outline-light w-100 py-2" for="fmtPdf">
-                    <i class="fa-regular fa-file-pdf me-1"></i> PDF (.pdf)
+                    <i class="fa-regular fa-file-pdf me-1 text-danger"></i> PDF (.pdf)
                 </label>
             </div>
         </div>
