@@ -1,21 +1,40 @@
-from datetime import datetime
 import io
 from copy import copy
+from datetime import datetime
 import pandas as pd
-from openpyxl import Workbook, load_workbook
+from openpyxl import load_workbook
 from openpyxl.styles import Alignment, Border, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
-# ReportLab para la generación de PDF nativa en Linux
+# ReportLab para PDF
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4, landscape
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import cm
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Table, TableStyle
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+
+# Mapeos de áreas por comprador según el local seleccionado
+MAPEO_AREAS = {
+    "La Benita": {
+        "COCINA BENITA": "COCINA",
+        "Gisela Benitez": "ATENCION",
+        "Ariana Maquera": "BARRA",
+        "Angie Apaza": "CAJA",
+    },
+    "La Guardiana": {
+        "COCINA GUARDIANA": "COCINA",
+        "BARRA GUARDIANA": "BARRA",
+        "CAJA GUARDIANA": "CAJA",
+    },
+    "Centro de Producción": {
+        "PRODUCCION": "PRODUCCION",
+        "ALMACEN": "ALMACEN",
+    },
+}
 
 
-def procesar_archivos_excel(archivos_subidos):
-    """Procesa los archivos Excel recibidos vía Flask y retorna un DataFrame procesado."""
+def procesar_archivos_excel(archivos_subidos, local_seleccionado):
+    """Procesa los archivos Excel aplicando el mapeo según el local elegido."""
     lista_df = [pd.read_excel(f) for f in archivos_subidos]
     df = pd.concat(lista_df, ignore_index=True)
 
@@ -35,19 +54,13 @@ def procesar_archivos_excel(archivos_subidos):
     cols_existentes = [c for c in columnas_ffill if c in df.columns]
     df[cols_existentes] = df[cols_existentes].ffill()
 
+    # Mapeo según el local seleccionado
+    mapeo_actual = MAPEO_AREAS.get(local_seleccionado, {})
+
     if "Comprador" in df.columns:
         df["AREA"] = (
-            df["Comprador"]
-            .map(
-                {
-                    "COCINA BENITA": "COCINA",
-                    "Gisela Benitez": "ATENCION",
-                    "Ariana Maquera": "BARRA",
-                    "Angie Apaza": "CAJA",
-                }
-            )
-            .fillna("")
-        )
+            df["Comprador"].map(mapeo_actual).fillna(df["Comprador"])
+        )  # Mantiene el nombre si no está en el mapa
         df = df.rename(columns={"Comprador": "Local"})
 
     df["RQ"] = (
@@ -110,7 +123,7 @@ def procesar_archivos_excel(archivos_subidos):
 
 
 def generar_excel_formateado(df):
-    """Aplica formatos openpyxl en memoria y retorna el archivo BytesIO."""
+    """Exporta y aplica los estilos condicionales en memoria."""
     output = io.BytesIO()
 
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
@@ -126,14 +139,12 @@ def generar_excel_formateado(df):
     fill_j = PatternFill(
         start_color="FCD5B4", end_color="FCD5B4", fill_type="solid"
     )
-
     thin_border = Border(
         left=Side(style="thin"),
         right=Side(style="thin"),
         top=Side(style="thin"),
         bottom=Side(style="thin"),
     )
-
     center_align = Alignment(horizontal="center", vertical="center")
 
     for row in range(2, ws.max_row + 1):
@@ -161,7 +172,6 @@ def generar_excel_formateado(df):
         col_letter = get_column_letter(col[0].column)
         ws.column_dimensions[col_letter].width = max_len + 3
 
-    # Colorear columna RQ y AREA por valor único
     colores = [
         "D9EAD3",
         "D0E0E3",
@@ -189,7 +199,6 @@ def generar_excel_formateado(df):
         if ws.max_column >= 2:
             ws.cell(row=row, column=2).fill = fill
 
-    # Ocultar columnas ID si existen
     for col_hid in ["ID", "Líneas de la orden/Producto/ID"]:
         if col_hid in headers:
             ws.column_dimensions[
@@ -202,35 +211,39 @@ def generar_excel_formateado(df):
     return final_output
 
 
-def generar_pdf_reportlab(df):
-    """Genera un archivo PDF landscape usando ReportLab."""
+def generar_pdf_reportlab(df, local_seleccionado):
+    """Genera el PDF landscape aprovechando el 100% del ancho de la hoja."""
     pdf_buffer = io.BytesIO()
 
+    # Configuración de página con márgenes mínimos para maximizar ancho (0.5 cm por lado)
+    margin = 0.5 * cm
     doc = SimpleDocTemplate(
         pdf_buffer,
         pagesize=landscape(A4),
-        leftMargin=0.5 * cm,
-        rightMargin=0.5 * cm,
-        topMargin=1.5 * cm,
-        bottomMargin=1.0 * cm,
+        leftMargin=margin,
+        rightMargin=margin,
+        topMargin=1.2 * cm,
+        bottomMargin=0.8 * cm,
     )
 
     elements = []
     styles = getSampleStyleSheet()
 
     fecha_str = datetime.now().strftime("%d.%m")
+    titulo_texto = (
+        f"RQ {local_seleccionado.upper()} - {fecha_str}"  # Título dinámico
+    )
+
     title_style = ParagraphStyle(
         "TitleStyle",
         parent=styles["Heading1"],
         fontName="Helvetica-Bold",
-        fontSize=22,
+        fontSize=20,
         alignment=1,
-        spaceAfter=15,
+        spaceAfter=12,
     )
+    elements.append(Paragraph(titulo_texto, title_style))
 
-    elements.append(Paragraph(f"RQ BENITA {fecha_str}", title_style))
-
-    # Ocultar columnas ID para la tabla del PDF
     cols_pdf = [
         c
         for c in df.columns
@@ -238,24 +251,49 @@ def generar_pdf_reportlab(df):
     ]
     df_pdf = df[cols_pdf]
 
-    data = [df_pdf.columns.tolist()] + df_pdf.astype(str).values.tolist()
+    # Ajustar estilos de celda envolviendo texto largo en Paragraph para autofit de altura
+    cell_style = ParagraphStyle("CellStyle", fontName="Helvetica", fontSize=8)
+    header_style = ParagraphStyle(
+        "HeaderStyle",
+        fontName="Helvetica-Bold",
+        fontSize=8,
+        textColor=colors.whitesmoke,
+        alignment=1,
+    )
 
-    # Estilos de la tabla
+    formatted_data = []
+    # Fila del Encabezado
+    formatted_data.append(
+        [Paragraph(str(col), header_style) for col in df_pdf.columns]
+    )
+
+    # Filas de Datos
+    for _, row in df_pdf.iterrows():
+        row_cells = []
+        for val in row:
+            text = "" if pd.isna(val) else str(val)
+            row_cells.append(Paragraph(text, cell_style))
+        formatted_data.append(row_cells)
+
+    # Ancho total disponible en la hoja A4 apapaisada
+    page_width = landscape(A4)[0] - (margin * 2)  # ~28.7 cm disponibles
+    num_cols = len(cols_pdf)
+
+    # Repartir anchos proporcionalmente entre las columnas para ocupar todo el ancho
+    col_widths = [page_width / num_cols] * num_cols
+
     table_style = TableStyle(
         [
             ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#343A40")),
-            ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
             ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-            ("FONTSIZE", (0, 0), (-1, 0), 9),
-            ("BOTTOMPADDING", (0, 0), (-1, 0), 6),
-            ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#CCCCCC")),
-            ("FONTNAME", (0, 1), (-1, -1), "Helvetica"),
-            ("FONTSIZE", (0, 1), (-1, -1), 8),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+            ("TOPPADDING", (0, 0), (-1, -1), 4),
+            ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#B0BEC5")),
         ]
     )
 
-    t = Table(data, repeatRows=1)
+    t = Table(formatted_data, colWidths=col_widths, repeatRows=1)
     t.setStyle(table_style)
     elements.append(t)
 
