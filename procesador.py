@@ -314,7 +314,7 @@ def generar_excel_formateado(df):
 
 
 def generar_pdf_reportlab(df, local_seleccionado):
-    """Genera PDF idéntico a Excel."""
+    """Genera PDF idéntico a Excel con anchos de columna ajustados y unidades en una sola línea."""
     pdf_buffer = io.BytesIO()
     margin = 0.5 * cm
 
@@ -380,20 +380,30 @@ def generar_pdf_reportlab(df, local_seleccionado):
         "PDFCellCenter", fontName="Helvetica", fontSize=7, alignment=1
     )
 
-    cols_centradas = ["Fecha esperada", "Unidad", "Cantidad"]
-    formatted_data = [
-        [Paragraph(str(c), style_header) for c in cols_pdf]
-    ]
+    # Estilo específico para la columna Unidad: sin saltos de línea y centrado
+    style_cell_unidad = ParagraphStyle(
+        "PDFCellUnidad",
+        fontName="Helvetica",
+        fontSize=7,
+        alignment=1,
+        wordWrap=None,  # Evita forzar saltos de línea innecesarios
+    )
+
+    cols_centradas = ["Fecha esperada", "Cantidad"]
+    formatted_data = [[Paragraph(str(c), style_header) for c in cols_pdf]]
 
     for _, row in df_pdf.iterrows():
         row_cells = []
         for col_name in cols_pdf:
             text = "" if pd.isna(row[col_name]) else str(row[col_name])
-            style = (
-                style_cell_center
-                if col_name in cols_centradas
-                else style_cell_left
-            )
+
+            if col_name == "Unidad":
+                style = style_cell_unidad
+            elif col_name in cols_centradas:
+                style = style_cell_center
+            else:
+                style = style_cell_left
+
             row_cells.append(Paragraph(text, style))
         formatted_data.append(row_cells)
 
@@ -401,8 +411,10 @@ def generar_pdf_reportlab(df, local_seleccionado):
         ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#343A40")),
         ("ALIGN", (0, 0), (-1, -1), "CENTER"),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("TOPPADDING", (0, 0), (-1, -1), 3),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+        ("TOPPADDING", (0, 0), (-1, -1), 2.5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 2.5),
+        ("LEFTPADDING", (0, 0), (-1, -1), 2),  # Padding interno reducido para evitar cortes
+        ("RIGHTPADDING", (0, 0), (-1, -1), 2),
         ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#A0A0A0")),
     ]
 
@@ -445,18 +457,21 @@ def generar_pdf_reportlab(df, local_seleccionado):
             )
 
     page_width = landscape(A4)[0] - (margin * 2)
+
+    # NUEVA DISTRIBUCIÓN DE ANCHOS:
+    # Reducimos 'Producto' de 0.25 a 0.18 y aumentamos 'Unidad' de 0.06 a 0.08
     widths_ratio = {
         "RQ": 0.07,
         "AREA": 0.07,
-        "CATEGORIA": 0.08,
+        "CATEGORIA": 0.09,
         "Fecha esperada": 0.08,
-        "Producto": 0.25,
-        "Unidad": 0.06,
+        "Producto": 0.18,  # Ajustado al texto sin espacio blanco sobrante
+        "Unidad": 0.08,    # Espacio suficiente para entrar en 1 sola línea
         "Ubicacion": 0.06,
         "Cantidad": 0.06,
         "Cant 1": 0.05,
         "Falta": 0.05,
-        "Observaciones": 0.17,
+        "Observaciones": 0.21,
     }
 
     col_widths = [
