@@ -23,9 +23,8 @@ MAPEO_AREAS = {
     },
     "La Guardiana": {
         "COCINA GUARDIANA": "COCINA",
-        "Maritza Alcasihuincha": "BARRA",
-        "Coordinador Guardiana": "ATENCION",
-        "Maria Villalobos": "CAJA",
+        "BARRA GUARDIANA": "BARRA",
+        "CAJA GUARDIANA": "CAJA",
     },
     "Centro de Producción": {
         "PRODUCCION": "PRODUCCION",
@@ -55,13 +54,10 @@ def procesar_archivos_excel(archivos_subidos, local_seleccionado):
     cols_existentes = [c for c in columnas_ffill if c in df.columns]
     df[cols_existentes] = df[cols_existentes].ffill()
 
-    # Mapeo según el local seleccionado
     mapeo_actual = MAPEO_AREAS.get(local_seleccionado, {})
 
     if "Comprador" in df.columns:
-        df["AREA"] = (
-            df["Comprador"].map(mapeo_actual).fillna(df["Comprador"])
-        )  # Mantiene el nombre si no está en el mapa
+        df["AREA"] = df["Comprador"].map(mapeo_actual).fillna(df["Comprador"])
         df = df.rename(columns={"Comprador": "Local"})
 
     df["RQ"] = (
@@ -124,7 +120,7 @@ def procesar_archivos_excel(archivos_subidos, local_seleccionado):
 
 
 def generar_excel_formateado(df):
-    """Exporta y aplica los estilos condicionales en memoria."""
+    """Exporta y aplica los estilos en el archivo Excel."""
     output = io.BytesIO()
 
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
@@ -149,10 +145,10 @@ def generar_excel_formateado(df):
     center_align = Alignment(horizontal="center", vertical="center")
 
     for row in range(2, ws.max_row + 1):
-        if ws.max_column >= 7:
-            ws.cell(row=row, column=7).fill = fill_g
-        if ws.max_column >= 10:
-            ws.cell(row=row, column=10).fill = fill_j
+        if ws.max_column >= 6:
+            ws.cell(row=row, column=6).fill = fill_g  # Ubicacion
+        if ws.max_column >= 9:
+            ws.cell(row=row, column=9).fill = fill_j  # Falta
 
     for row in ws.iter_rows(
         min_row=1, max_row=ws.max_row, max_col=ws.max_column
@@ -213,37 +209,30 @@ def generar_excel_formateado(df):
 
 
 def generar_pdf_reportlab(df, local_seleccionado):
-    """Genera el PDF landscape aprovechando el 100% del ancho de la hoja."""
+    """Genera el PDF con réplica de colores, centrados y título en todas las hojas."""
     pdf_buffer = io.BytesIO()
-
-    # Configuración de página con márgenes mínimos para maximizar ancho (0.5 cm por lado)
     margin = 0.5 * cm
+
     doc = SimpleDocTemplate(
         pdf_buffer,
         pagesize=landscape(A4),
         leftMargin=margin,
         rightMargin=margin,
-        topMargin=1.2 * cm,
+        topMargin=1.8 * cm,  # Espacio superior reservado para el título recurrente
         bottomMargin=0.8 * cm,
     )
 
-    elements = []
-    styles = getSampleStyleSheet()
-
     fecha_str = datetime.now().strftime("%d.%m")
-    titulo_texto = (
-        f"RQ {local_seleccionado.upper()} - {fecha_str}"  # Título dinámico
-    )
+    titulo_texto = f"RQ {local_seleccionado.upper()} - {fecha_str}"
 
-    title_style = ParagraphStyle(
-        "TitleStyle",
-        parent=styles["Heading1"],
-        fontName="Helvetica-Bold",
-        fontSize=20,
-        alignment=1,
-        spaceAfter=12,
-    )
-    elements.append(Paragraph(titulo_texto, title_style))
+    # Función ejecutada en cada página para estampar el título del reporte
+    def agregar_encabezado_pagina(canvas, doc):
+        canvas.saveState()
+        canvas.setFont("Helvetica-Bold", 16)
+        canvas.drawCentredString(landscape(A4)[0] / 2.0, landscape(A4)[1] - 1.3 * cm, titulo_texto)
+        canvas.restoreState()
+
+    elements = []
 
     cols_pdf = [
         c
@@ -252,52 +241,133 @@ def generar_pdf_reportlab(df, local_seleccionado):
     ]
     df_pdf = df[cols_pdf]
 
-    # Ajustar estilos de celda envolviendo texto largo en Paragraph para autofit de altura
-    cell_style = ParagraphStyle("CellStyle", fontName="Helvetica", fontSize=8)
-    header_style = ParagraphStyle(
-        "HeaderStyle",
+    # Paleta de colores idéntica a la de Excel
+    HEX_COLORES_RQ = [
+        "#D9EAD3",
+        "#D0E0E3",
+        "#FCE5CD",
+        "#EAD1DC",
+        "#FFF2CC",
+        "#D9D2E9",
+        "#CFE2F3",
+    ]
+    mapa_colores_rq = {}
+    color_idx = 0
+
+    for valor in df_pdf["RQ"].unique():
+        mapa_colores_rq[valor] = HEX_COLORES_RQ[color_idx % len(HEX_COLORES_RQ)]
+        color_idx += 1
+
+    # Estilos tipográficos
+    style_header = ParagraphStyle(
+        "PDFHeader",
         fontName="Helvetica-Bold",
         fontSize=8,
+        alignment=1,  # Centrado
         textColor=colors.whitesmoke,
-        alignment=1,
     )
+
+    style_cell_left = ParagraphStyle(
+        "PDFCellLeft", fontName="Helvetica", fontSize=7, alignment=0
+    )
+    style_cell_center = ParagraphStyle(
+        "PDFCellCenter", fontName="Helvetica", fontSize=7, alignment=1
+    )
+
+    cols_centradas = ["Fecha esperada", "Unidad", "Cantidad"]
 
     formatted_data = []
-    # Fila del Encabezado
-    formatted_data.append(
-        [Paragraph(str(col), header_style) for col in df_pdf.columns]
-    )
 
-    # Filas de Datos
+    # Encabezado
+    formatted_data.append([Paragraph(str(c), style_header) for c in cols_pdf])
+
+    # Construcción de celdas con sus alineaciones correspondientes
     for _, row in df_pdf.iterrows():
         row_cells = []
-        for val in row:
-            text = "" if pd.isna(val) else str(val)
-            row_cells.append(Paragraph(text, cell_style))
+        for col_name in cols_pdf:
+            text = "" if pd.isna(row[col_name]) else str(row[col_name])
+            style = (
+                style_cell_center
+                if col_name in cols_centradas
+                else style_cell_left
+            )
+            row_cells.append(Paragraph(text, style))
         formatted_data.append(row_cells)
 
-    # Ancho total disponible en la hoja A4 apapaisada
-    page_width = landscape(A4)[0] - (margin * 2)  # ~28.7 cm disponibles
-    num_cols = len(cols_pdf)
+    # Definir formato estético de la tabla (Bordes y Rellenos de celdas)
+    table_styles = [
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#343A40")),
+        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("TOPPADDING", (0, 0), (-1, -1), 3),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#A0A0A0")),
+    ]
 
-    # Repartir anchos proporcionalmente entre las columnas para ocupar todo el ancho
-    col_widths = [page_width / num_cols] * num_cols
+    # Aplicar rellenos por celda replicando el Excel
+    idx_ubicacion = cols_pdf.index("Ubicacion") if "Ubicacion" in cols_pdf else -1
+    idx_falta = cols_pdf.index("Falta") if "Falta" in cols_pdf else -1
 
-    table_style = TableStyle(
-        [
-            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#343A40")),
-            ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-            ("TOPPADDING", (0, 0), (-1, -1), 4),
-            ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#B0BEC5")),
-        ]
-    )
+    for row_idx, row in enumerate(df_pdf.iterrows(), start=1):
+        rq_val = row[1]["RQ"]
+        hex_color = mapa_colores_rq.get(rq_val, "#FFFFFF")
+
+        # Color por grupo de RQ en columnas RQ (0) y AREA (1)
+        table_styles.append(
+            ("BACKGROUND", (0, row_idx), (1, row_idx), colors.HexColor(hex_color))
+        )
+
+        # Color verde para columna Ubicacion
+        if idx_ubicacion != -1:
+            table_styles.append(
+                (
+                    "BACKGROUND",
+                    (idx_ubicacion, row_idx),
+                    (idx_ubicacion, row_idx),
+                    colors.HexColor("#D8E4BC"),
+                )
+            )
+
+        # Color naranja/salmón para columna Falta
+        if idx_falta != -1:
+            table_styles.append(
+                (
+                    "BACKGROUND",
+                    (idx_falta, row_idx),
+                    (idx_falta, row_idx),
+                    colors.HexColor("#FCD5B4"),
+                )
+            )
+
+    # Distribución proporcional de anchos
+    page_width = landscape(A4)[0] - (margin * 2)
+    widths_ratio = {
+        "RQ": 0.08,
+        "AREA": 0.08,
+        "Fecha esperada": 0.08,
+        "Producto": 0.28,
+        "Unidad": 0.06,
+        "Ubicacion": 0.07,
+        "Cantidad": 0.07,
+        "Cant 1": 0.06,
+        "Falta": 0.06,
+        "Observaciones": 0.16,
+    }
+
+    col_widths = [
+        page_width * widths_ratio.get(col, 1 / len(cols_pdf)) for col in cols_pdf
+    ]
 
     t = Table(formatted_data, colWidths=col_widths, repeatRows=1)
-    t.setStyle(table_style)
+    t.setStyle(TableStyle(table_styles))
     elements.append(t)
 
-    doc.build(elements)
+    # Construir PDF vinculando la plantilla del título superior en cada página
+    doc.build(
+        elements,
+        onFirstPage=agregar_encabezado_pagina,
+        onLaterPages=agregar_encabezado_pagina,
+    )
+
     pdf_buffer.seek(0)
     return pdf_buffer
