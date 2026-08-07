@@ -32,7 +32,6 @@ MAPEO_AREAS = {
     },
 }
 
-# Rutas relativas hacia las Bases de Datos dentro del repositorio
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 RUTA_BD_GENERAL = os.path.join(
     BASE_DIR, "bd", "BD MERGE UNIDADES GENERAL 5.xlsx"
@@ -40,10 +39,13 @@ RUTA_BD_GENERAL = os.path.join(
 RUTA_BD_CORRELACIONES = os.path.join(
     BASE_DIR, "bd", "MERGE CORRELACIONES 1.xlsx"
 )
+RUTA_BD_UBICACIONES = os.path.join(
+    BASE_DIR, "bd", "UBICACIONES PAS.xlsx"
+)
 
 
 def procesar_archivos_excel(archivos_subidos, local_seleccionado):
-    """Procesa los archivos de Odoo y realiza los MERGES con las bases de datos maestras."""
+    """Procesa los archivos Odoo realizando los MERGES de BD General, Correlaciones y Ubicaciones PAS."""
     lista_df = [pd.read_excel(f) for f in archivos_subidos]
     df = pd.concat(lista_df, ignore_index=True)
 
@@ -92,6 +94,8 @@ def procesar_archivos_excel(archivos_subidos, local_seleccionado):
     df["Ubicacion"] = ""
     df["Cant 1"] = ""
     df["Falta"] = ""
+    df["FIFO 1"] = ""
+    df["FIFO 2"] = ""
 
     cols_deseadas = [
         "RQ",
@@ -103,6 +107,8 @@ def procesar_archivos_excel(archivos_subidos, local_seleccionado):
         "Cantidad",
         "Cant 1",
         "Falta",
+        "FIFO 1",
+        "FIFO 2",
         "Observaciones",
         "ID",
         "Líneas de la orden/Producto/ID",
@@ -133,9 +139,7 @@ def procesar_archivos_excel(archivos_subidos, local_seleccionado):
         df_bd = df_bd.rename(columns={"ITEM NAME ODOO": "Producto"})
 
         df = df.merge(df_bd, on="Producto", how="left")
-        df["Producto"] = df["Producto"].astype(str) + df[
-            "Observaciones"
-        ].astype(str)
+        df["Producto"] = df["Producto"].astype(str) + df["Observaciones"].astype(str)
 
         cols_m1 = [
             "RQ",
@@ -148,14 +152,14 @@ def procesar_archivos_excel(archivos_subidos, local_seleccionado):
             "Cantidad",
             "Cant 1",
             "Falta",
+            "FIFO 1",
+            "FIFO 2",
             "ID",
             "Líneas de la orden/Producto/ID",
         ]
         df = df[[c for c in cols_m1 if c in df.columns]]
         if "CATEGORIA" in df.columns:
-            df = df.sort_values(
-                by=["RQ", "CATEGORIA"], kind="mergesort"
-            )
+            df = df.sort_values(by=["RQ", "CATEGORIA"], kind="mergesort")
 
     # =========================================================
     # MERGE 2: MERGE CORRELACIONES (Conversión de Unidades)
@@ -179,42 +183,57 @@ def procesar_archivos_excel(archivos_subidos, local_seleccionado):
             )
 
         cols_a_borrar = [
-            "ESTADO",
-            "PROVEEDOR",
-            "CATEGORIA_y",
-            "VALOR",
-            "SUB UNIDAD",
-            "SUB CANTIDAD",
-            "CANTIDAD UNIDAD INTERNA",
-            "STOCK TOTAL",
-            "CANTIDAD 1",
-            "UNIDAD INTERNA 1",
-            "RENDIMIENTO 1",
-            "CANTIDAD CONVERTIDA",
-            "UNIDAD ODOO\n(UNIDAD PEDIDO)",
-            "CANTIDAD 2",
-            "RENDIMIENTO 2",
-            "CANTIDAD CONVERTIDA 2",
-            "ESTADO CONVERSION",
-            "CANTIDAD CONVERTIDA ",
+            "ESTADO", "PROVEEDOR", "CATEGORIA_y", "VALOR", "SUB UNIDAD",
+            "SUB CANTIDAD", "CANTIDAD UNIDAD INTERNA", "STOCK TOTAL",
+            "CANTIDAD 1", "UNIDAD INTERNA 1", "RENDIMIENTO 1",
+            "CANTIDAD CONVERTIDA", "UNIDAD ODOO\n(UNIDAD PEDIDO)",
+            "CANTIDAD 2", "RENDIMIENTO 2", "CANTIDAD CONVERTIDA 2",
+            "ESTADO CONVERSION", "CANTIDAD CONVERTIDA ",
         ]
         df.drop(columns=cols_a_borrar, inplace=True, errors="ignore")
 
-        cols_orden_final = [
-            "RQ",
-            "AREA",
-            "CATEGORIA",
-            "Fecha esperada",
-            "Producto",
-            "Unidad",
-            "Ubicacion",
-            "Cantidad",
-            "Cant 1",
-            "Falta",
-            "ID",
-            "Líneas de la orden/Producto/ID",
-        ]
-        df = df[[c for c in cols_orden_final if c in df.columns]]
+    # =========================================================
+    # MERGE 3: UBICACIONES PAS
+    # =========================================================
+    if os.path.exists(RUTA_BD_UBICACIONES) and "CATEGORIA" in df.columns:
+        df_ubic = pd.read_excel(RUTA_BD_UBICACIONES)
+        
+        # Normalizar nombres de columnas para hacer match seguro
+        df_ubic.rename(
+            columns={
+                "CATEGORIA P A S": "CATEGORIA",
+                "UBICACION": "Ubicacion_PAS",
+            },
+            inplace=True,
+        )
+
+        df = pd.merge(df, df_ubic[["CATEGORIA", "Ubicacion_PAS"]], on="CATEGORIA", how="left")
+        
+        if "Ubicacion_PAS" in df.columns:
+            df["Ubicacion"] = df["Ubicacion_PAS"].fillna("")
+            df.drop(columns=["Ubicacion_PAS"], inplace=True)
+
+    # Redondear la columna Cantidad a 1 decimal
+    if "Cantidad" in df.columns:
+        df["Cantidad"] = pd.to_numeric(df["Cantidad"], errors="coerce").round(1)
+
+    cols_orden_final = [
+        "RQ",
+        "AREA",
+        "CATEGORIA",
+        "Fecha esperada",
+        "Producto",
+        "Unidad",
+        "Ubicacion",
+        "Cantidad",
+        "Cant 1",
+        "Falta",
+        "FIFO 1",
+        "FIFO 2",
+        "ID",
+        "Líneas de la orden/Producto/ID",
+    ]
+    df = df[[c for c in cols_orden_final if c in df.columns]]
 
     return df
 
@@ -242,11 +261,9 @@ def generar_excel_formateado(df):
         top=Side(style="thin"),
         bottom=Side(style="thin"),
     )
-    center_align = Alignment(horizontal="center", vertical="center")
 
     headers = {cell.value: idx for idx, cell in enumerate(ws[1], start=1)}
 
-    # Relleno de columnas Ubicacion y Falta si existen
     if "Ubicacion" in headers:
         col_u = headers["Ubicacion"]
         for r in range(2, ws.max_row + 1):
@@ -263,6 +280,7 @@ def generar_excel_formateado(df):
         for cell in row:
             cell.border = thin_border
 
+    center_align = Alignment(horizontal="center", vertical="center")
     for col_name in ["Fecha esperada", "Unidad", "Cantidad"]:
         if col_name in headers:
             col_idx = headers[col_name]
@@ -275,13 +293,7 @@ def generar_excel_formateado(df):
         ws.column_dimensions[col_letter].width = max_len + 3
 
     colores = [
-        "D9EAD3",
-        "D0E0E3",
-        "FCE5CD",
-        "EAD1DC",
-        "FFF2CC",
-        "D9D2E9",
-        "CFE2F3",
+        "D9EAD3", "D0E0E3", "FCE5CD", "EAD1DC", "FFF2CC", "D9D2E9", "CFE2F3"
     ]
     mapa_colores = {}
     color_idx = 0
@@ -314,7 +326,7 @@ def generar_excel_formateado(df):
 
 
 def generar_pdf_reportlab(df, local_seleccionado):
-    """Genera PDF idéntico a Excel con anchos de columna ajustados y unidades en una sola línea."""
+    """Genera PDF idéntico a Excel."""
     pdf_buffer = io.BytesIO()
     margin = 0.5 * cm
 
@@ -348,13 +360,7 @@ def generar_pdf_reportlab(df, local_seleccionado):
     df_pdf = df[cols_pdf]
 
     HEX_COLORES_RQ = [
-        "#D9EAD3",
-        "#D0E0E3",
-        "#FCE5CD",
-        "#EAD1DC",
-        "#FFF2CC",
-        "#D9D2E9",
-        "#CFE2F3",
+        "#D9EAD3", "#D0E0E3", "#FCE5CD", "#EAD1DC", "#FFF2CC", "#D9D2E9", "#CFE2F3"
     ]
     mapa_colores_rq = {}
     color_idx = 0
@@ -369,24 +375,22 @@ def generar_pdf_reportlab(df, local_seleccionado):
     style_header = ParagraphStyle(
         "PDFHeader",
         fontName="Helvetica-Bold",
-        fontSize=8,
+        fontSize=7.5,
         alignment=1,
         textColor=colors.whitesmoke,
     )
     style_cell_left = ParagraphStyle(
-        "PDFCellLeft", fontName="Helvetica", fontSize=7, alignment=0
+        "PDFCellLeft", fontName="Helvetica", fontSize=6.5, alignment=0
     )
     style_cell_center = ParagraphStyle(
-        "PDFCellCenter", fontName="Helvetica", fontSize=7, alignment=1
+        "PDFCellCenter", fontName="Helvetica", fontSize=6.5, alignment=1
     )
-
-    # Estilo específico para la columna Unidad: sin saltos de línea y centrado
     style_cell_unidad = ParagraphStyle(
         "PDFCellUnidad",
         fontName="Helvetica",
-        fontSize=7,
+        fontSize=6.5,
         alignment=1,
-        wordWrap=None,  # Evita forzar saltos de línea innecesarios
+        wordWrap=None,
     )
 
     cols_centradas = ["Fecha esperada", "Cantidad"]
@@ -411,10 +415,10 @@ def generar_pdf_reportlab(df, local_seleccionado):
         ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#343A40")),
         ("ALIGN", (0, 0), (-1, -1), "CENTER"),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("TOPPADDING", (0, 0), (-1, -1), 2.5),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 2.5),
-        ("LEFTPADDING", (0, 0), (-1, -1), 2),  # Padding interno reducido para evitar cortes
-        ("RIGHTPADDING", (0, 0), (-1, -1), 2),
+        ("TOPPADDING", (0, 0), (-1, -1), 2),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+        ("LEFTPADDING", (0, 0), (-1, -1), 1.5),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 1.5),
         ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#A0A0A0")),
     ]
 
@@ -458,20 +462,20 @@ def generar_pdf_reportlab(df, local_seleccionado):
 
     page_width = landscape(A4)[0] - (margin * 2)
 
-    # NUEVA DISTRIBUCIÓN DE ANCHOS:
-    # Reducimos 'Producto' de 0.25 a 0.18 y aumentamos 'Unidad' de 0.06 a 0.08
     widths_ratio = {
-        "RQ": 0.07,
-        "AREA": 0.07,
-        "CATEGORIA": 0.09,
-        "Fecha esperada": 0.08,
-        "Producto": 0.18,  # Ajustado al texto sin espacio blanco sobrante
-        "Unidad": 0.08,    # Espacio suficiente para entrar en 1 sola línea
-        "Ubicacion": 0.06,
-        "Cantidad": 0.06,
+        "RQ": 0.06,
+        "AREA": 0.06,
+        "CATEGORIA": 0.08,
+        "Fecha esperada": 0.07,
+        "Producto": 0.18,
+        "Unidad": 0.06,
+        "Ubicacion": 0.08,
+        "Cantidad": 0.05,
         "Cant 1": 0.05,
         "Falta": 0.05,
-        "Observaciones": 0.21,
+        "FIFO 1": 0.05,
+        "FIFO 2": 0.05,
+        "Observaciones": 0.16,
     }
 
     col_widths = [
