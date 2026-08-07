@@ -1,4 +1,5 @@
 import io
+import os
 from copy import copy
 from datetime import datetime
 import pandas as pd
@@ -13,7 +14,6 @@ from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import cm
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Table, TableStyle
 
-# Mapeos de áreas por comprador según el local seleccionado
 MAPEO_AREAS = {
     "La Benita": {
         "COCINA BENITA": "COCINA",
@@ -32,9 +32,18 @@ MAPEO_AREAS = {
     },
 }
 
+# Rutas relativas hacia las Bases de Datos dentro del repositorio
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+RUTA_BD_GENERAL = os.path.join(
+    BASE_DIR, "bd", "BD MERGE UNIDADES GENERAL 5.xlsx"
+)
+RUTA_BD_CORRELACIONES = os.path.join(
+    BASE_DIR, "bd", "MERGE CORRELACIONES 1.xlsx"
+)
+
 
 def procesar_archivos_excel(archivos_subidos, local_seleccionado):
-    """Procesa los archivos Excel aplicando el mapeo según el local elegido."""
+    """Procesa los archivos de Odoo y realiza los MERGES con las bases de datos maestras."""
     lista_df = [pd.read_excel(f) for f in archivos_subidos]
     df = pd.concat(lista_df, ignore_index=True)
 
@@ -116,11 +125,102 @@ def procesar_archivos_excel(archivos_subidos, local_seleccionado):
             axis=1,
         )
 
+    # =========================================================
+    # MERGE 1: BD GENERAL
+    # =========================================================
+    if os.path.exists(RUTA_BD_GENERAL):
+        df_bd = pd.read_excel(RUTA_BD_GENERAL)
+        df_bd = df_bd.rename(columns={"ITEM NAME ODOO": "Producto"})
+
+        df = df.merge(df_bd, on="Producto", how="left")
+        df["Producto"] = df["Producto"].astype(str) + df[
+            "Observaciones"
+        ].astype(str)
+
+        cols_m1 = [
+            "RQ",
+            "AREA",
+            "CATEGORIA",
+            "Fecha esperada",
+            "Producto",
+            "Unidad",
+            "Ubicacion",
+            "Cantidad",
+            "Cant 1",
+            "Falta",
+            "ID",
+            "Líneas de la orden/Producto/ID",
+        ]
+        df = df[[c for c in cols_m1 if c in df.columns]]
+        if "CATEGORIA" in df.columns:
+            df = df.sort_values(
+                by=["RQ", "CATEGORIA"], kind="mergesort"
+            )
+
+    # =========================================================
+    # MERGE 2: MERGE CORRELACIONES (Conversión de Unidades)
+    # =========================================================
+    if os.path.exists(RUTA_BD_CORRELACIONES):
+        df_corr = pd.read_excel(RUTA_BD_CORRELACIONES)
+        df_corr.rename(columns={"ITEM NAME ODOO": "Producto"}, inplace=True)
+
+        df = pd.merge(df, df_corr, on="Producto", how="left")
+
+        if "RENDIMIENTO 2" in df.columns:
+            df["Cantidad RQ"] = df["Cantidad"] * df["RENDIMIENTO 2"]
+            df.drop(columns=["Unidad", "Cantidad"], inplace=True, errors="ignore")
+            df.rename(
+                columns={
+                    "Cantidad RQ": "Cantidad",
+                    "UNIDAD INTERNA 2": "Unidad",
+                    "CATEGORIA_x": "CATEGORIA",
+                },
+                inplace=True,
+            )
+
+        cols_a_borrar = [
+            "ESTADO",
+            "PROVEEDOR",
+            "CATEGORIA_y",
+            "VALOR",
+            "SUB UNIDAD",
+            "SUB CANTIDAD",
+            "CANTIDAD UNIDAD INTERNA",
+            "STOCK TOTAL",
+            "CANTIDAD 1",
+            "UNIDAD INTERNA 1",
+            "RENDIMIENTO 1",
+            "CANTIDAD CONVERTIDA",
+            "UNIDAD ODOO\n(UNIDAD PEDIDO)",
+            "CANTIDAD 2",
+            "RENDIMIENTO 2",
+            "CANTIDAD CONVERTIDA 2",
+            "ESTADO CONVERSION",
+            "CANTIDAD CONVERTIDA ",
+        ]
+        df.drop(columns=cols_a_borrar, inplace=True, errors="ignore")
+
+        cols_orden_final = [
+            "RQ",
+            "AREA",
+            "CATEGORIA",
+            "Fecha esperada",
+            "Producto",
+            "Unidad",
+            "Ubicacion",
+            "Cantidad",
+            "Cant 1",
+            "Falta",
+            "ID",
+            "Líneas de la orden/Producto/ID",
+        ]
+        df = df[[c for c in cols_orden_final if c in df.columns]]
+
     return df
 
 
 def generar_excel_formateado(df):
-    """Exporta y aplica los estilos en el archivo Excel."""
+    """Genera archivo Excel aplicando estilos."""
     output = io.BytesIO()
 
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
@@ -144,19 +244,24 @@ def generar_excel_formateado(df):
     )
     center_align = Alignment(horizontal="center", vertical="center")
 
-    for row in range(2, ws.max_row + 1):
-        if ws.max_column >= 6:
-            ws.cell(row=row, column=6).fill = fill_g  # Ubicacion
-        if ws.max_column >= 9:
-            ws.cell(row=row, column=9).fill = fill_j  # Falta
+    headers = {cell.value: idx for idx, cell in enumerate(ws[1], start=1)}
+
+    # Relleno de columnas Ubicacion y Falta si existen
+    if "Ubicacion" in headers:
+        col_u = headers["Ubicacion"]
+        for r in range(2, ws.max_row + 1):
+            ws.cell(row=r, column=col_u).fill = fill_g
+
+    if "Falta" in headers:
+        col_f = headers["Falta"]
+        for r in range(2, ws.max_row + 1):
+            ws.cell(row=r, column=col_f).fill = fill_j
 
     for row in ws.iter_rows(
         min_row=1, max_row=ws.max_row, max_col=ws.max_column
     ):
         for cell in row:
             cell.border = thin_border
-
-    headers = {cell.value: idx for idx, cell in enumerate(ws[1], start=1)}
 
     for col_name in ["Fecha esperada", "Unidad", "Cantidad"]:
         if col_name in headers:
@@ -209,7 +314,7 @@ def generar_excel_formateado(df):
 
 
 def generar_pdf_reportlab(df, local_seleccionado):
-    """Genera el PDF con réplica de colores, centrados y título en todas las hojas."""
+    """Genera PDF idéntico a Excel."""
     pdf_buffer = io.BytesIO()
     margin = 0.5 * cm
 
@@ -218,18 +323,19 @@ def generar_pdf_reportlab(df, local_seleccionado):
         pagesize=landscape(A4),
         leftMargin=margin,
         rightMargin=margin,
-        topMargin=1.8 * cm,  # Espacio superior reservado para el título recurrente
+        topMargin=1.8 * cm,
         bottomMargin=0.8 * cm,
     )
 
     fecha_str = datetime.now().strftime("%d.%m")
     titulo_texto = f"RQ {local_seleccionado.upper()} - {fecha_str}"
 
-    # Función ejecutada en cada página para estampar el título del reporte
     def agregar_encabezado_pagina(canvas, doc):
         canvas.saveState()
         canvas.setFont("Helvetica-Bold", 16)
-        canvas.drawCentredString(landscape(A4)[0] / 2.0, landscape(A4)[1] - 1.3 * cm, titulo_texto)
+        canvas.drawCentredString(
+            landscape(A4)[0] / 2.0, landscape(A4)[1] - 1.3 * cm, titulo_texto
+        )
         canvas.restoreState()
 
     elements = []
@@ -241,7 +347,6 @@ def generar_pdf_reportlab(df, local_seleccionado):
     ]
     df_pdf = df[cols_pdf]
 
-    # Paleta de colores idéntica a la de Excel
     HEX_COLORES_RQ = [
         "#D9EAD3",
         "#D0E0E3",
@@ -254,19 +359,20 @@ def generar_pdf_reportlab(df, local_seleccionado):
     mapa_colores_rq = {}
     color_idx = 0
 
-    for valor in df_pdf["RQ"].unique():
-        mapa_colores_rq[valor] = HEX_COLORES_RQ[color_idx % len(HEX_COLORES_RQ)]
-        color_idx += 1
+    if "RQ" in df_pdf.columns:
+        for valor in df_pdf["RQ"].unique():
+            mapa_colores_rq[valor] = HEX_COLORES_RQ[
+                color_idx % len(HEX_COLORES_RQ)
+            ]
+            color_idx += 1
 
-    # Estilos tipográficos
     style_header = ParagraphStyle(
         "PDFHeader",
         fontName="Helvetica-Bold",
         fontSize=8,
-        alignment=1,  # Centrado
+        alignment=1,
         textColor=colors.whitesmoke,
     )
-
     style_cell_left = ParagraphStyle(
         "PDFCellLeft", fontName="Helvetica", fontSize=7, alignment=0
     )
@@ -275,13 +381,10 @@ def generar_pdf_reportlab(df, local_seleccionado):
     )
 
     cols_centradas = ["Fecha esperada", "Unidad", "Cantidad"]
+    formatted_data = [
+        [Paragraph(str(c), style_header) for c in cols_pdf]
+    ]
 
-    formatted_data = []
-
-    # Encabezado
-    formatted_data.append([Paragraph(str(c), style_header) for c in cols_pdf])
-
-    # Construcción de celdas con sus alineaciones correspondientes
     for _, row in df_pdf.iterrows():
         row_cells = []
         for col_name in cols_pdf:
@@ -294,7 +397,6 @@ def generar_pdf_reportlab(df, local_seleccionado):
             row_cells.append(Paragraph(text, style))
         formatted_data.append(row_cells)
 
-    # Definir formato estético de la tabla (Bordes y Rellenos de celdas)
     table_styles = [
         ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#343A40")),
         ("ALIGN", (0, 0), (-1, -1), "CENTER"),
@@ -304,20 +406,24 @@ def generar_pdf_reportlab(df, local_seleccionado):
         ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#A0A0A0")),
     ]
 
-    # Aplicar rellenos por celda replicando el Excel
-    idx_ubicacion = cols_pdf.index("Ubicacion") if "Ubicacion" in cols_pdf else -1
+    idx_ubicacion = (
+        cols_pdf.index("Ubicacion") if "Ubicacion" in cols_pdf else -1
+    )
     idx_falta = cols_pdf.index("Falta") if "Falta" in cols_pdf else -1
 
     for row_idx, row in enumerate(df_pdf.iterrows(), start=1):
-        rq_val = row[1]["RQ"]
+        rq_val = row[1]["RQ"] if "RQ" in df_pdf.columns else ""
         hex_color = mapa_colores_rq.get(rq_val, "#FFFFFF")
 
-        # Color por grupo de RQ en columnas RQ (0) y AREA (1)
         table_styles.append(
-            ("BACKGROUND", (0, row_idx), (1, row_idx), colors.HexColor(hex_color))
+            (
+                "BACKGROUND",
+                (0, row_idx),
+                (1, row_idx),
+                colors.HexColor(hex_color),
+            )
         )
 
-        # Color verde para columna Ubicacion
         if idx_ubicacion != -1:
             table_styles.append(
                 (
@@ -328,7 +434,6 @@ def generar_pdf_reportlab(df, local_seleccionado):
                 )
             )
 
-        # Color naranja/salmón para columna Falta
         if idx_falta != -1:
             table_styles.append(
                 (
@@ -339,19 +444,19 @@ def generar_pdf_reportlab(df, local_seleccionado):
                 )
             )
 
-    # Distribución proporcional de anchos
     page_width = landscape(A4)[0] - (margin * 2)
     widths_ratio = {
-        "RQ": 0.08,
-        "AREA": 0.08,
+        "RQ": 0.07,
+        "AREA": 0.07,
+        "CATEGORIA": 0.08,
         "Fecha esperada": 0.08,
-        "Producto": 0.28,
+        "Producto": 0.25,
         "Unidad": 0.06,
-        "Ubicacion": 0.07,
-        "Cantidad": 0.07,
-        "Cant 1": 0.06,
-        "Falta": 0.06,
-        "Observaciones": 0.16,
+        "Ubicacion": 0.06,
+        "Cantidad": 0.06,
+        "Cant 1": 0.05,
+        "Falta": 0.05,
+        "Observaciones": 0.17,
     }
 
     col_widths = [
@@ -362,7 +467,6 @@ def generar_pdf_reportlab(df, local_seleccionado):
     t.setStyle(TableStyle(table_styles))
     elements.append(t)
 
-    # Construir PDF vinculando la plantilla del título superior en cada página
     doc.build(
         elements,
         onFirstPage=agregar_encabezado_pagina,
