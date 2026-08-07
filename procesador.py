@@ -197,21 +197,61 @@ def procesar_archivos_excel(archivos_subidos, local_seleccionado):
     # =========================================================
     if os.path.exists(RUTA_BD_UBICACIONES) and "CATEGORIA" in df.columns:
         df_ubic = pd.read_excel(RUTA_BD_UBICACIONES)
-        
-        # Normalizar nombres de columnas para hacer match seguro
-        df_ubic.rename(
-            columns={
-                "CATEGORIA P A S": "CATEGORIA",
-                "UBICACION": "Ubicacion_PAS",
-            },
-            inplace=True,
-        )
 
-        df = pd.merge(df, df_ubic[["CATEGORIA", "Ubicacion_PAS"]], on="CATEGORIA", how="left")
-        
-        if "Ubicacion_PAS" in df.columns:
-            df["Ubicacion"] = df["Ubicacion_PAS"].fillna("")
-            df.drop(columns=["Ubicacion_PAS"], inplace=True)
+        # Normalizar nombres de encabezados del archivo de ubicaciones
+        df_ubic.columns = df_ubic.columns.astype(str).str.strip()
+
+        # Buscar la columna del producto/categoría en UBICACIONES PAS
+        col_cat_ubic = None
+        for col in df_ubic.columns:
+            if "CATEGORIA" in col.upper() or "PAS" in col.upper():
+                col_cat_ubic = col
+                break
+
+        col_ubic_val = None
+        for col in df_ubic.columns:
+            if "UBIC" in col.upper():
+                col_ubic_val = col
+                break
+
+        if col_cat_ubic and col_ubic_val:
+            df_ubic.rename(
+                columns={
+                    col_cat_ubic: "CATEGORIA_PAS",
+                    col_ubic_val: "Ubicacion_PAS",
+                },
+                inplace=True,
+            )
+
+            # Limpieza profunda de texto: eliminar espacios y homogeneizar a mayúsculas
+            df["CATEGORIA_CLEAN"] = (
+                df["CATEGORIA"].astype(str).str.strip().str.upper()
+            )
+            df_ubic["CATEGORIA_PAS_CLEAN"] = (
+                df_ubic["CATEGORIA_PAS"].astype(str).str.strip().str.upper()
+            )
+
+            # Realizar el cruce con las llaves limpias
+            df = pd.merge(
+                df,
+                df_ubic[["CATEGORIA_PAS_CLEAN", "Ubicacion_PAS"]],
+                left_on="CATEGORIA_CLEAN",
+                right_on="CATEGORIA_PAS_CLEAN",
+                how="left",
+            )
+
+            # Asignar el resultado a la columna Ubicacion y limpiar temporales
+            if "Ubicacion_PAS" in df.columns:
+                df["Ubicacion"] = df["Ubicacion_PAS"].fillna("")
+                df.drop(
+                    columns=[
+                        "CATEGORIA_CLEAN",
+                        "CATEGORIA_PAS_CLEAN",
+                        "Ubicacion_PAS",
+                    ],
+                    inplace=True,
+                    errors="ignore",
+                )
 
     # Redondear la columna Cantidad a 1 decimal
     if "Cantidad" in df.columns:
