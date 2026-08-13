@@ -386,7 +386,7 @@ def generar_pdf_reportlab(df, local_seleccionado):
 
     def agregar_encabezado_pagina(canvas, doc):
         canvas.saveState()
-        canvas.setFont("Helvetica-Bold", 12)
+        canvas.setFont("Helvetica-Bold", 14)
         posicion_derecha = landscape(A4)[0] - margin
         posicion_superior = landscape(A4)[1] - 0.8 * cm
         canvas.drawRightString(
