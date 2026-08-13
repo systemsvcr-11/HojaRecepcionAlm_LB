@@ -367,10 +367,9 @@ def generar_excel_formateado(df):
 
 
 def generar_pdf_reportlab(df, local_seleccionado):
-    """Genera PDF idéntico a Excel pero ultra-compacto y con título en la esquina superior derecha."""
+    """Genera PDF idéntico a Excel pero con tipografía más grande ajustada al tamaño de las celdas."""
     pdf_buffer = io.BytesIO()
 
-    # Márgenes mínimos
     margin = 0.3 * cm
 
     doc = SimpleDocTemplate(
@@ -385,16 +384,11 @@ def generar_pdf_reportlab(df, local_seleccionado):
     fecha_str = datetime.now().strftime("%d.%m")
     titulo_texto = f"RQ {local_seleccionado.upper()} - {fecha_str}"
 
-    # ENCABEZADO ALINEADO A LA DERECHA
     def agregar_encabezado_pagina(canvas, doc):
         canvas.saveState()
         canvas.setFont("Helvetica-Bold", 12)
-
-        # Calculamos la posición del borde derecho (Ancho de la hoja A4 apapaisada - Margen derecho)
         posicion_derecha = landscape(A4)[0] - margin
         posicion_superior = landscape(A4)[1] - 0.8 * cm
-
-        # Dibuja el texto alineado a la derecha
         canvas.drawRightString(
             posicion_derecha, posicion_superior, titulo_texto
         )
@@ -431,30 +425,30 @@ def generar_pdf_reportlab(df, local_seleccionado):
     style_header = ParagraphStyle(
         "PDFHeader",
         fontName="Helvetica-Bold",
-        fontSize=7,
-        leading=8,
+        fontSize=8,
+        leading=9,
         alignment=1,
         textColor=colors.whitesmoke,
     )
     style_cell_left = ParagraphStyle(
         "PDFCellLeft",
         fontName="Helvetica",
-        fontSize=6,
-        leading=7,
+        fontSize=7.5,
+        leading=8.5,
         alignment=0,
     )
     style_cell_center = ParagraphStyle(
         "PDFCellCenter",
         fontName="Helvetica",
-        fontSize=6,
-        leading=7,
+        fontSize=7.5,
+        leading=8.5,
         alignment=1,
     )
     style_cell_unidad = ParagraphStyle(
         "PDFCellUnidad",
         fontName="Helvetica",
-        fontSize=6,
-        leading=7,
+        fontSize=7.5,
+        leading=8.5,
         alignment=1,
         wordWrap=None,
     )
@@ -477,6 +471,7 @@ def generar_pdf_reportlab(df, local_seleccionado):
             row_cells.append(Paragraph(text, style))
         formatted_data.append(row_cells)
 
+    # 2. SE MANTIENEN LOS MISMOS PADDING Y BORDES DE LA TABLA
     table_styles = [
         ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#343A40")),
         ("ALIGN", (0, 0), (-1, -1), "CENTER"),
