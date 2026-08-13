@@ -367,10 +367,10 @@ def generar_excel_formateado(df):
 
 
 def generar_pdf_reportlab(df, local_seleccionado):
-    """Genera PDF idéntico a Excel pero ultra-compacto para minimizar páginas."""
+    """Genera PDF idéntico a Excel pero ultra-compacto y con título en la esquina superior derecha."""
     pdf_buffer = io.BytesIO()
 
-    # 1. MÁRGENES MÍNIMOS (0.3 cm por lado y 1.1 cm superior para el título)
+    # Márgenes mínimos
     margin = 0.3 * cm
 
     doc = SimpleDocTemplate(
@@ -378,21 +378,25 @@ def generar_pdf_reportlab(df, local_seleccionado):
         pagesize=landscape(A4),
         leftMargin=margin,
         rightMargin=margin,
-        topMargin=1.1 * cm,  # Espacio reducido para título
+        topMargin=1.1 * cm,
         bottomMargin=0.5 * cm,
     )
 
     fecha_str = datetime.now().strftime("%d.%m")
     titulo_texto = f"RQ {local_seleccionado.upper()} - {fecha_str}"
 
-    # 2. ENCABEZADO MÁS COMPACTO
+    # ENCABEZADO ALINEADO A LA DERECHA
     def agregar_encabezado_pagina(canvas, doc):
         canvas.saveState()
-        canvas.setFont("Helvetica-Bold", 12)  # Bajamos de 16 a 12pt
-        canvas.drawCentredString(
-            landscape(A4)[0] / 2.0,
-            landscape(A4)[1] - 0.8 * cm,
-            titulo_texto,
+        canvas.setFont("Helvetica-Bold", 12)
+
+        # Calculamos la posición del borde derecho (Ancho de la hoja A4 apapaisada - Margen derecho)
+        posicion_derecha = landscape(A4)[0] - margin
+        posicion_superior = landscape(A4)[1] - 0.8 * cm
+
+        # Dibuja el texto alineado a la derecha
+        canvas.drawRightString(
+            posicion_derecha, posicion_superior, titulo_texto
         )
         canvas.restoreState()
 
@@ -424,8 +428,6 @@ def generar_pdf_reportlab(df, local_seleccionado):
             ]
             color_idx += 1
 
-    # 3. FUENTES Y LEADING (INTERLINEADO) COMPACTOS
-    # Bajamos el tamaño de letra a 6pt y leading a 7pt para que el texto multilinea ocupe muy poca altura
     style_header = ParagraphStyle(
         "PDFHeader",
         fontName="Helvetica-Bold",
@@ -475,13 +477,12 @@ def generar_pdf_reportlab(df, local_seleccionado):
             row_cells.append(Paragraph(text, style))
         formatted_data.append(row_cells)
 
-    # 4. PADDING (RELLENO DE CELDAS) AL MÍNIMO
     table_styles = [
         ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#343A40")),
         ("ALIGN", (0, 0), (-1, -1), "CENTER"),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("TOPPADDING", (0, 0), (-1, -1), 1.2),  # Reducido de 2.5 a 1.2
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 1.2),  # Reducido de 2.5 a 1.2
+        ("TOPPADDING", (0, 0), (-1, -1), 1.2),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 1.2),
         ("LEFTPADDING", (0, 0), (-1, -1), 1),
         ("RIGHTPADDING", (0, 0), (-1, -1), 1),
         ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#A0A0A0")),
