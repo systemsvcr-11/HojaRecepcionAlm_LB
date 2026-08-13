@@ -425,30 +425,30 @@ def generar_pdf_reportlab(df, local_seleccionado):
     style_header = ParagraphStyle(
         "PDFHeader",
         fontName="Helvetica-Bold",
-        fontSize=8,
-        leading=9,
+        fontSize=7,
+        leading=8,
         alignment=1,
         textColor=colors.whitesmoke,
     )
     style_cell_left = ParagraphStyle(
         "PDFCellLeft",
         fontName="Helvetica",
-        fontSize=7.5,
-        leading=8.5,
+        fontSize=7,
+        leading=8,
         alignment=0,
     )
     style_cell_center = ParagraphStyle(
         "PDFCellCenter",
         fontName="Helvetica",
-        fontSize=7.5,
-        leading=8.5,
+        fontSize=7,
+        leading=8,
         alignment=1,
     )
     style_cell_unidad = ParagraphStyle(
         "PDFCellUnidad",
         fontName="Helvetica",
-        fontSize=7.5,
-        leading=8.5,
+        fontSize=7,
+        leading=8,
         alignment=1,
         wordWrap=None,
     )
