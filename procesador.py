@@ -366,27 +366,32 @@ def generar_excel_formateado(df):
 
 
 def generar_pdf_reportlab(df, local_seleccionado):
-    """Genera PDF idéntico a Excel."""
+    """Genera PDF idéntico a Excel pero ultra-compacto para minimizar páginas."""
     pdf_buffer = io.BytesIO()
-    margin = 0.5 * cm
+
+    # 1. MÁRGENES MÍNIMOS (0.3 cm por lado y 1.1 cm superior para el título)
+    margin = 0.3 * cm
 
     doc = SimpleDocTemplate(
         pdf_buffer,
         pagesize=landscape(A4),
         leftMargin=margin,
         rightMargin=margin,
-        topMargin=1.8 * cm,
-        bottomMargin=0.8 * cm,
+        topMargin=1.1 * cm,  # Espacio reducido para título
+        bottomMargin=0.5 * cm,
     )
 
     fecha_str = datetime.now().strftime("%d.%m")
     titulo_texto = f"RQ {local_seleccionado.upper()} - {fecha_str}"
 
+    # 2. ENCABEZADO MÁS COMPACTO
     def agregar_encabezado_pagina(canvas, doc):
         canvas.saveState()
-        canvas.setFont("Helvetica-Bold", 16)
+        canvas.setFont("Helvetica-Bold", 12)  # Bajamos de 16 a 12pt
         canvas.drawCentredString(
-            landscape(A4)[0] / 2.0, landscape(A4)[1] - 1.3 * cm, titulo_texto
+            landscape(A4)[0] / 2.0,
+            landscape(A4)[1] - 0.8 * cm,
+            titulo_texto,
         )
         canvas.restoreState()
 
@@ -400,7 +405,13 @@ def generar_pdf_reportlab(df, local_seleccionado):
     df_pdf = df[cols_pdf]
 
     HEX_COLORES_RQ = [
-        "#D9EAD3", "#D0E0E3", "#FCE5CD", "#EAD1DC", "#FFF2CC", "#D9D2E9", "#CFE2F3"
+        "#D9EAD3",
+        "#D0E0E3",
+        "#FCE5CD",
+        "#EAD1DC",
+        "#FFF2CC",
+        "#D9D2E9",
+        "#CFE2F3",
     ]
     mapa_colores_rq = {}
     color_idx = 0
@@ -412,23 +423,35 @@ def generar_pdf_reportlab(df, local_seleccionado):
             ]
             color_idx += 1
 
+    # 3. FUENTES Y LEADING (INTERLINEADO) COMPACTOS
+    # Bajamos el tamaño de letra a 6pt y leading a 7pt para que el texto multilinea ocupe muy poca altura
     style_header = ParagraphStyle(
         "PDFHeader",
         fontName="Helvetica-Bold",
-        fontSize=7.5,
+        fontSize=7,
+        leading=8,
         alignment=1,
         textColor=colors.whitesmoke,
     )
     style_cell_left = ParagraphStyle(
-        "PDFCellLeft", fontName="Helvetica", fontSize=6.5, alignment=0
+        "PDFCellLeft",
+        fontName="Helvetica",
+        fontSize=6,
+        leading=7,
+        alignment=0,
     )
     style_cell_center = ParagraphStyle(
-        "PDFCellCenter", fontName="Helvetica", fontSize=6.5, alignment=1
+        "PDFCellCenter",
+        fontName="Helvetica",
+        fontSize=6,
+        leading=7,
+        alignment=1,
     )
     style_cell_unidad = ParagraphStyle(
         "PDFCellUnidad",
         fontName="Helvetica",
-        fontSize=6.5,
+        fontSize=6,
+        leading=7,
         alignment=1,
         wordWrap=None,
     )
@@ -451,15 +474,16 @@ def generar_pdf_reportlab(df, local_seleccionado):
             row_cells.append(Paragraph(text, style))
         formatted_data.append(row_cells)
 
+    # 4. PADDING (RELLENO DE CELDAS) AL MÍNIMO
     table_styles = [
         ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#343A40")),
         ("ALIGN", (0, 0), (-1, -1), "CENTER"),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("TOPPADDING", (0, 0), (-1, -1), 2),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
-        ("LEFTPADDING", (0, 0), (-1, -1), 1.5),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 1.5),
-        ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#A0A0A0")),
+        ("TOPPADDING", (0, 0), (-1, -1), 1.2),  # Reducido de 2.5 a 1.2
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 1.2),  # Reducido de 2.5 a 1.2
+        ("LEFTPADDING", (0, 0), (-1, -1), 1),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 1),
+        ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#A0A0A0")),
     ]
 
     idx_ubicacion = (
