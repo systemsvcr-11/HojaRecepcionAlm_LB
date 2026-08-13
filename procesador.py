@@ -23,8 +23,9 @@ MAPEO_AREAS = {
     },
     "La Guardiana": {
         "COCINA GUARDIANA": "COCINA",
-        "BARRA GUARDIANA": "BARRA",
-        "CAJA GUARDIANA": "CAJA",
+        "Maritza Alcasihuincha": "BARRA",
+        "Maria Villalobos": "CAJA",
+        "Coordinador Guardiana": "ATENCION",
     },
     "Centro de Producción": {
         "PRODUCCION": "PRODUCCION",
